@@ -1,6 +1,7 @@
 from scipy.io import wavfile
 import argparse
 import numpy as np
+import random
 
 def save_wav(name, data):
     wavfile.write(name, 44100, data.flatten().astype(np.float32))
@@ -47,7 +48,7 @@ def sliceRandomPercentage(input_data, target_data, percentage):
     # Do a random split of the data by slicing the data into 100 pieces and randomly 
     # chosing some number of them.
 
-    if percentage < 0 & percentage > 100:
+    if percentage < 0 and percentage > 100:
         raise ValueError("Perentage must be between 0 and 100")
 
     # Split the data into 100 pieces
@@ -94,10 +95,10 @@ def main(args):
 
     # If Desired Normalize the data
     if (args.normalize):
-        clean_data = normalize(clean_data).reshape(len(X_all),1)
-        target_data = normalize(target_data).reshape(len(y_all),1)
-        test_in = normalize(test_in).reshape(len(X_all),1)
-        test_out = normalize(test_out).reshape(len(X_all),1)
+        clean_data = normalize(clean_data).reshape(len(clean_data),1)
+        target_data = normalize(target_data).reshape(len(target_data),1)
+        in_test = normalize(in_test).reshape(len(test_in_data),1)
+        out_test = normalize(out_test).reshape(len(test_out_data),1)
 
     if args.random_split:
         in_train, out_train, in_val, out_val = sliceRandomPercentage(clean_data, target_data, args.random_split)
@@ -125,7 +126,7 @@ if __name__ == "__main__":
     parser.add_argument("--normalize", "-n", type=bool, default=False)
     parser.add_argument("name")
     parser.add_argument("--mod_split", '-ms', default=5, help="The default splitting mechanism. Splits the training and validation data on a 5 mod (or 20%).")
-    parser.add_argument("--random_split", '-rs', default=None, help="By default, the training is split on a modulus. However, desingnating a percentage between 0 and 100 will create a random data split between the training and validatation sets.")
+    parser.add_argument("--random_split", '-rs', type=float, default=None, help="By default, the training is split on a modulus. However, desingnating a percentage between 0 and 100 will create a random data split between the training and validatation sets.")
     parser.add_argument("--path", type=str, default="Data")
 
 
