@@ -11,77 +11,6 @@ import os
 import csv
 from scipy.io.wavfile import write
 
-
-prsr = argparse.ArgumentParser(
-    description='''This script implements training for neural network amplifier/distortion effects modelling. This is
-    intended to recreate the training of models of the ht1 amplifier and big muff distortion pedal, but can easily be 
-    adapted to use any dataset''')
-
-# arguments for the training/test data locations and file names and config loading
-prsr.add_argument('--device', '-p', default='ht1', help='This label describes what device is being modelled')
-prsr.add_argument('--data_location', '-dl', default='..', help='Location of the "Data" directory')
-prsr.add_argument('--file_name', '-fn', default='ht1',
-                  help='The filename of the wav file to be loaded as the input/target data, the script looks for files'
-                       'with the filename and the extensions -input.wav and -target.wav ')
-prsr.add_argument('--load_config', '-l',
-                  help="File path, to a JSON config file, arguments listed in the config file will replace the defaults"
-                  , default='GatedConv1')
-prsr.add_argument('--config_location', '-cl', default='Configs', help='Location of the "Configs" directory')
-prsr.add_argument('--save_location', '-sloc', default='Results', help='Directory where trained models will be saved')
-prsr.add_argument('--load_model', '-lm', default=True, help='load a pretrained model if it is found')
-
-# pre-processing of the training/val/test data
-prsr.add_argument('--segment_length', '-slen', type=int, default=22050, help='Training audio segment length in samples')
-
-# number of epochs and validation
-prsr.add_argument('--epochs', '-eps', type=int, default=2000, help='Max number of training epochs to run')
-prsr.add_argument('--validation_f', '-vfr', type=int, default=2, help='Validation Frequency (in epochs)')
-# TO DO
-prsr.add_argument('--validation_p', '-vp', type=int, default=25,
-                  help='How many validations without improvement before stopping training, None for no early stopping')
-
-# settings for the training epoch
-prsr.add_argument('--batch_size', '-bs', type=int, default=40, help='Training mini-batch size')
-prsr.add_argument('--iter_num', '-it', type=int, default=None,
-                  help='Overrides --batch_size and instead sets the batch_size so that a total of --iter_num batches'
-                       'are processed in each epoch')
-prsr.add_argument('--learn_rate', '-lr', type=float, default=0.005, help='Initial learning rate')
-prsr.add_argument('--init_len', '-il', type=int, default=200,
-                  help='Number of sequence samples to process before starting weight updates')
-prsr.add_argument('--up_fr', '-uf', type=int, default=1000,
-                  help='For recurrent models, number of samples to run in between updating network weights, i.e the '
-                       'default argument updates every 1000 samples')
-prsr.add_argument('--cuda', '-cu', default=1, help='Use GPU if available')
-
-# loss function/s
-prsr.add_argument('--loss_fcns', '-lf', default={'ESRPre': 0.75, 'DC': 0.25},
-                  help='Which loss functions, ESR, ESRPre, DC. Argument is a dictionary with each key representing a'
-                       'loss function name and the corresponding value being the multiplication factor applied to that'
-                       'loss function, used to control the contribution of each loss function to the overall loss ')
-prsr.add_argument('--pre_filt',   '-pf',   default='high_pass',
-                    help='FIR filter coefficients for pre-emphasis filter, can also read in a csv file')
-
-# the validation and test sets are divided into shorter chunks before processing to reduce the amount of GPU memory used
-# you can probably ignore this unless during training you get a 'cuda out of memory' error
-prsr.add_argument('--val_chunk', '-vs', type=int, default=100000, help='Number of sequence samples to process'
-                                                                               'in each chunk of validation ')
-prsr.add_argument('--test_chunk', '-tc', type=int, default=100000, help='Number of sequence samples to process'
-                                                                               'in each chunk of validation ')
-
-# arguments for the network structure
-prsr.add_argument('--model', '-m', default='GatedConvNet', type=str, help='model architecture')
-prsr.add_argument('--input_size', '-is', default=1, type=int, help='1 for mono input data, 2 for stereo, etc ')
-prsr.add_argument('--output_size', '-os', default=1, type=int, help='1 for mono output data, 2 for stereo, etc ')
-prsr.add_argument('--num_blocks', '-nb', default=2, type=int, help='Number of recurrent or convolutional blocks')
-prsr.add_argument('--num_layers', '-nl', default=9, type=int, help='Number of layers in each conv block')
-prsr.add_argument('--hidden_size', '-hs', default=8, type=int, help='Rec unit hidden state size, or conv channels')
-prsr.add_argument('--kernel_size', '-ks', default=3, type=int, help='kernel size in conv layers')
-prsr.add_argument('--dilation_growth', '-dg', default=2, type=int, help='dilation growth for each layer')
-prsr.add_argument('--unit_type', '-ut', default='LSTM', help='LSTM or GRU or RNN')
-prsr.add_argument('--skip_con', '-sc', default=1, help='is there a skip connection for the input to the output')
-
-args = prsr.parse_args()
-
 # This function takes a directory as argument, looks for an existing model file called 'model.json' and loads a network
 # from it, after checking the network in 'model.json' matches the architecture described in args. If no model file is
 # found, it creates a network according to the specification in args.
@@ -116,7 +45,8 @@ def init_model(save_path, args):
             network.save_model('model', save_path)
     return network
 
-if __name__ == "__main__":
+
+def main(args):
     """The main method creates the recurrent network, trains it and carries out validation/testing """
     start_time = time.time()
 
@@ -168,6 +98,8 @@ if __name__ == "__main__":
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimiser, 'min', factor=0.5, patience=5, verbose=True)
     loss_functions = training.LossWrapper(args.loss_fcns, args.pre_filt)
     train_track = training.TrainTrack()
+
+    # Tensorboard writer
     writer = SummaryWriter(os.path.join('runs2', model_name))
 
     # Load dataset
@@ -199,6 +131,8 @@ if __name__ == "__main__":
                                          dataset.subsets['train'].data['target'][0],
                                          loss_functions, optimiser, args.batch_size)
 
+        writer.add_scalar('Time/EpochTrainingTime', time.time()-ep_st_time, epoch)
+
         # Run validation
         if epoch % args.validation_f == 0:
             val_ep_st_time = time.time()
@@ -213,13 +147,14 @@ if __name__ == "__main__":
             else:
                 patience_counter += 1
             train_track.val_epoch_update(val_loss.item(), val_ep_st_time, time.time())
-            writer.add_scalar('Loss/val', train_track['validation_losses'][-1], epoch)
+            writer.add_scalar('TrainingAndValidation/ValidationLoss', train_track['validation_losses'][-1], epoch)
+
 
         print('current learning rate: ' + str(optimiser.param_groups[0]['lr']))
         train_track.train_epoch_update(epoch_loss.item(), ep_st_time, time.time(), init_time, epoch)
         # write loss to the tensorboard (just for recording purposes)
-        writer.add_scalar('Loss/train', train_track['training_losses'][-1], epoch)
-        writer.add_scalar('LR/current', optimiser.param_groups[0]['lr'])
+        writer.add_scalar('TrainingAndValidation/TrainingLoss', train_track['training_losses'][-1], epoch)
+        writer.add_scalar('TrainingAndValidation/LearningRate', optimiser.param_groups[0]['lr'], epoch)
         network.save_model('model', save_path)
         miscfuncs.json_save(train_track, 'training_stats', save_path)
 
@@ -227,29 +162,126 @@ if __name__ == "__main__":
             print('validation patience limit reached at epoch ' + str(epoch))
             break
 
+    print("Done Training")
     lossESR = training.ESRLoss()
+    lossDC = training.DCLoss()
+
+    print("Testing the final Model")
+    # Test the model the training ended with
     test_output, test_loss = network.process_data(dataset.subsets['test'].data['input'][0],
-                                     dataset.subsets['test'].data['target'][0], loss_functions, args.test_chunk)
+                                                 dataset.subsets['test'].data['target'][0], loss_functions, args.test_chunk)
     test_loss_ESR = lossESR(test_output, dataset.subsets['test'].data['target'][0])
+    test_loss_DC = lossDC(test_output, dataset.subsets['test'].data['target'][0])
     write(os.path.join(save_path, "test_out_final.wav"), dataset.subsets['test'].fs, test_output.cpu().numpy()[:, 0, 0])
-    writer.add_scalar('Loss/test_loss', test_loss.item(), 1)
-    writer.add_scalar('Loss/test_lossESR', test_loss_ESR.item(), 1)
+    writer.add_scalar('Testing/FinalTestLoss', test_loss.item())
+    writer.add_scalar('Testing/FinalTestESR', test_loss_ESR.item())
+    writer.add_scalar('Testing/FinalTestDC', test_loss_DC.item())
+
     train_track['test_loss_final'] = test_loss.item()
     train_track['test_lossESR_final'] = test_loss_ESR.item()
 
+    print("Testing the best Model")
+    # Test the best model
     best_val_net = miscfuncs.json_load('model_best', save_path)
     network = networks.load_model(best_val_net)
     test_output, test_loss = network.process_data(dataset.subsets['test'].data['input'][0],
-                                     dataset.subsets['test'].data['target'][0], loss_functions, args.test_chunk)
+                                                 dataset.subsets['test'].data['target'][0], loss_functions, args.test_chunk)
     test_loss_ESR = lossESR(test_output, dataset.subsets['test'].data['target'][0])
-    write(os.path.join(save_path, "test_out_bestv.wav"),
-          dataset.subsets['test'].fs, test_output.cpu().numpy()[:, 0, 0])
-    writer.add_scalar('Loss/test_loss', test_loss.item(), 2)
-    writer.add_scalar('Loss/test_lossESR', test_loss_ESR.item(), 2)
+    test_loss_DC = lossDC(test_output, dataset.subsets['test'].data['target'][0])
+    write(os.path.join(save_path, "test_out_best.wav"),
+         dataset.subsets['test'].fs, test_output.cpu().numpy()[:, 0, 0])
+    writer.add_scalar('Testing/BestTestLoss', test_loss.item())
+    writer.add_scalar('Testing/BestTestESR', test_loss_ESR.item())
+    writer.add_scalar('Testing/BestTestDC', test_loss_DC.item())
     train_track['test_loss_best'] = test_loss.item()
     train_track['test_lossESR_best'] = test_loss_ESR.item()
+
+    print("Finished Training: " + model_name)
+
+    # Save the training stats
     miscfuncs.json_save(train_track, 'training_stats', save_path)
     if cuda:
         with open(os.path.join(save_path, 'maxmemusage.txt'), 'w') as f:
             f.write(str(torch.cuda.max_memory_allocated()))
+
+
+if __name__ == "__main__":
+    prsr = argparse.ArgumentParser(
+        description='''This script implements training for neural network amplifier/distortion effects modelling. This is
+        intended to recreate the training of models of the ht1 amplifier and big muff distortion pedal, but can easily be 
+        adapted to use any dataset''')
+
+    # arguments for the training/test data locations and file names and config loading
+    prsr.add_argument('--device', '-p', default='ht1', help='This label describes what device is being modelled')
+    prsr.add_argument('--data_location', '-dl', default='..', help='Location of the "Data" directory')
+    prsr.add_argument('--file_name', '-fn', default='ht1',
+                      help='The filename of the wav file to be loaded as the input/target data, the script looks for files'
+                           'with the filename and the extensions -input.wav and -target.wav ')
+    prsr.add_argument('--load_config', '-l',
+                      help="File path, to a JSON config file, arguments listed in the config file will replace the defaults"
+                      , default='GatedConv1')
+    prsr.add_argument('--config_location', '-cl', default='Configs', help='Location of the "Configs" directory')
+    prsr.add_argument('--save_location', '-sloc', default='Results', help='Directory where trained models will be saved')
+    prsr.add_argument('--load_model', '-lm', default=True, help='load a pretrained model if it is found')
+    prsr.add_argument('--seed', default=None, type=float, help='seed all of the random number generators if desired')
+
+    # pre-processing of the training/val/test data
+    prsr.add_argument('--segment_length', '-slen', type=int, default=22050, help='Training audio segment length in samples')
+
+    # number of epochs and validation
+    prsr.add_argument('--epochs', '-eps', type=int, default=200, help='Max number of training epochs to run')
+    prsr.add_argument('--validation_f', '-vfr', type=int, default=2, help='Validation Frequency (in epochs)')
+    # TO DO
+    prsr.add_argument('--validation_p', '-vp', type=int, default=25,
+                      help='How many validations without improvement before stopping training, None for no early stopping')
+
+    # settings for the training epoch
+    prsr.add_argument('--batch_size', '-bs', type=int, default=40, help='Training mini-batch size')
+    prsr.add_argument('--iter_num', '-it', type=int, default=None,
+                      help='Overrides --batch_size and instead sets the batch_size so that a total of --iter_num batches'
+                           'are processed in each epoch')
+    prsr.add_argument('--learn_rate', '-lr', type=float, default=0.005, help='Initial learning rate')
+    prsr.add_argument('--init_len', '-il', type=int, default=200,
+                      help='Number of sequence samples to process before starting weight updates')
+    prsr.add_argument('--up_fr', '-uf', type=int, default=1000,
+                      help='For recurrent models, number of samples to run in between updating network weights, i.e the '
+                           'default argument updates every 1000 samples')
+    prsr.add_argument('--cuda', '-cu', default=1, help='Use GPU if available')
+
+    # loss function/s
+    prsr.add_argument('--loss_fcns', '-lf', default={'ESRPre': 0.75, 'DC': 0.25},
+                      help='Which loss functions, ESR, ESRPre, DC. Argument is a dictionary with each key representing a'
+                           'loss function name and the corresponding value being the multiplication factor applied to that'
+                           'loss function, used to control the contribution of each loss function to the overall loss ')
+    prsr.add_argument('--pre_filt',   '-pf',   default='high_pass',
+                        help='FIR filter coefficients for pre-emphasis filter, can also read in a csv file')
+
+    # the validation and test sets are divided into shorter chunks before processing to reduce the amount of GPU memory used
+    # you can probably ignore this unless during training you get a 'cuda out of memory' error
+    prsr.add_argument('--val_chunk', '-vs', type=int, default=100000, help='Number of sequence samples to process'
+                                                                                   'in each chunk of validation ')
+    prsr.add_argument('--test_chunk', '-tc', type=int, default=100000, help='Number of sequence samples to process'
+                                                                                   'in each chunk of validation ')
+
+    # arguments for the network structure
+    prsr.add_argument('--model', '-m', default='GatedConvNet', type=str, help='model architecture')
+    prsr.add_argument('--input_size', '-is', default=1, type=int, help='1 for mono input data, 2 for stereo, etc ')
+    prsr.add_argument('--output_size', '-os', default=1, type=int, help='1 for mono output data, 2 for stereo, etc ')
+    prsr.add_argument('--num_blocks', '-nb', default=2, type=int, help='Number of recurrent or convolutional blocks')
+    prsr.add_argument('--num_layers', '-nl', default=9, type=int, help='Number of layers in each conv block')
+    prsr.add_argument('--hidden_size', '-hs', default=8, type=int, help='Rec unit hidden state size, or conv channels')
+    prsr.add_argument('--kernel_size', '-ks', default=3, type=int, help='kernel size in conv layers')
+    prsr.add_argument('--dilation_growth', '-dg', default=2, type=int, help='dilation growth for each layer')
+    prsr.add_argument('--unit_type', '-ut', default='LSTM', help='LSTM or GRU or RNN')
+    prsr.add_argument('--skip_con', '-sc', default=1, help='is there a skip connection for the input to the output')
+
+    args = prsr.parse_args()
+
+    if args.seed:
+        torch.manual_seed(args.seed)
+        np.random.seed(args.seed)
+        random.seed(args.seed)
+
+    # Run the training
+    main(args)
 
