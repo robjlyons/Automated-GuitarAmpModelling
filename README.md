@@ -43,6 +43,11 @@ python dist_model_recnet.py -l "RNN3-ht40cond" -is 2
 
 Note: [NeuralPi](https://github.com/GuitarML/NeuralPi) version 1.3 has the ability to run models conditioned on a single parameter as a real-time guitar plugin (the conditioned parameter is assumed to be gain/drive).
 
+### Using Transfer Learning
+You can greatly improve training by starting with a pre-trained model of a similar amp/pedal. Simply start and stop the training script to generate the model file in the "Results" folder, then replace the "model.json" file with another trained model and restart training. This gives the training a head start, and can also reduce the amount of training data needed for a accurate model. 
+
+For more information on using Transfer Learning for Guitar Effects check out this article published on [Towards Data Science](https://towardsdatascience.com/transfer-learning-for-guitar-effects-4af50609dce1)
+
 ##
 
 This repository contains neural network training scripts and trained models of guitar amplifiers and distortion pedals. The 'Results' directory contains some example recurrent neural network models trained to emulate the ht-1 amplifier and Big Muff Pi fuzz pedal, these models are described in this [conference paper](https://www.dafx.de/paper-archive/2019/DAFx2019_paper_43.pdf)
