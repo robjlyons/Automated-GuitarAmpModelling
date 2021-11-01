@@ -26,6 +26,23 @@ python dist_model_recnet.py -l "RNN3-acoustic1-pre"
 # The plots will be generated in the Results/modelName/ directory
 python plot.py acoustic1-pre
 ```
+
+### Training Conditioned Models
+
+Helper scipts have been added to aid in training conditioned models. These models are capable of reproducing the full range of a particular knob, such as Gain/Drive. The ```colab_conditioned_training.ipynb``` script can be used to train these types of models. The ```prep_wav_cond.py``` must first be edited to reference your wav files along with the value of the parameter for each set of in/out recordings. 
+
+You will still use mono, 32FP wav files to start. After running the ```prep_wav_cond.py``` on these files, the processsed input wav files are now 2 channel (stereo), with the audio data on the first channel and the conditioning parameter on the second channel. For best results, record 4-5 samples of the full range of the gain/drive knob normalized as 0.0 to 1.0. For example: (0.0 0.33, 0.66, 1.0) or (0.0, 0.25, 0.5, 0.75, 1.0). 
+
+```
+# Edit the "file_map" dictionary variable in the following script to reference your wav files
+python prep_wav_cond.py ht40cond
+
+# The "-is 2" flag specifies that two inputs to the network are used, 1 for the audio data and 1 for the conditioning parameter
+python dist_model_recnet.py -l "RNN3-ht40cond" -is 2
+```
+
+Note: [NeuralPi](https://github.com/GuitarML/NeuralPi) version 1.3 has the ability to run models conditioned on a single parameter as a real-time guitar plugin (the conditioned parameter is assumed to be gain/drive).
+
 ##
 
 This repository contains neural network training scripts and trained models of guitar amplifiers and distortion pedals. The 'Results' directory contains some example recurrent neural network models trained to emulate the ht-1 amplifier and Big Muff Pi fuzz pedal, these models are described in this [conference paper](https://www.dafx.de/paper-archive/2019/DAFx2019_paper_43.pdf)
