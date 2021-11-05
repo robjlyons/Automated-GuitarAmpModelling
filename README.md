@@ -71,6 +71,17 @@ During training, the script will save some data to a folder in the Results direc
 
 A trained model contained in one of the 'model.json' or 'model_best.json' files can be loaded, see the 'proc_audio.py' script for an example of how this is done.
 
+### Determinism
+
+If determinism is desired, `dist_model_recnet.py` provides an option to seed all of the random number generators used at once. However, if NVIDIA CUDA is used, you must also handle the non-deterministic behavior of CUDA for RNN calculations as is described in the [Rev8 Release Notes/](https://docs.nvidia.com/deeplearning/cudnn/release-notes/rel_8.html). Because it is unadvisable to gloabaly configure the CUDA buffer size manually, it is recomended to launch jupyter with the CUDE buffer configuation as shown below for two buffers of size 4096.
+```
+CUBLAS_WORKSPACE_CONFIG=:4096:2 jupyter notebook
+```
+or for 8 buffers of 16:
+```
+CUBLAS_WORKSPACE_CONFIG=:16:8 jupyter notebook
+```
+
 ### Feedback
 
 This repository is still a work in progress, and I welcome your feedback! Either by raising an Issue or in the 'Discussions' tab 

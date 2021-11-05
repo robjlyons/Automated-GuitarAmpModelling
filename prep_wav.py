@@ -2,6 +2,7 @@ from scipy.io import wavfile
 import argparse
 import numpy as np
 import random
+import json
 
 def save_wav(name, data):
     wavfile.write(name, 44100, data.flatten().astype(np.float32))
@@ -86,28 +87,39 @@ def sliceRandomPercentage(input_data, target_data, percentage):
 
 def nonConditionedWavParse(args):
     # Load and Preprocess Data ###########################################
-    in_rate, in_data = wavfile.read(args.in_file)
-    out_rate, out_data = wavfile.read(args.out_file)
-    test_in_rate, test_in_data = wavfile.read(args.test_in_file)
-    test_out_rate, test_out_data = wavfile.read(args.test_out_file)
+    in_rate, in_data = wavfile.read(args.snapshot[0])
+    out_rate, out_data = wavfile.read(args.snapshot[1])
 
     clean_data = in_data.astype(np.float32).flatten()
     target_data = out_data.astype(np.float32).flatten()
-    in_test = test_in_data.astype(np.float32).flatten()
-    out_test = test_out_data.astype(np.float32).flatten()
 
     # If Desired Normalize the data
     if (args.normalize):
         clean_data = normalize(clean_data).reshape(len(clean_data),1)
         target_data = normalize(target_data).reshape(len(target_data),1)
-        in_test = normalize(in_test).reshape(len(test_in_data),1)
-        out_test = normalize(out_test).reshape(len(test_out_data),1)
 
     if args.random_split:
         in_train, out_train, in_val, out_val = sliceRandomPercentage(clean_data, target_data, args.random_split)
     else:
         # Split the data on a twenty percent mod
         in_train, out_train, in_val, out_val = sliceOnMod(clean_data, target_data, args.mod_split)
+
+    # If separate test files are given process them.
+    # Else, use validation data sets.
+    if (len(args.snapshot) == 4):
+        test_in_rate, test_in_data = wavfile.read(args.snapshot[2])
+        test_out_rate, test_out_data = wavfile.read(args.snapshot[3])
+        in_test = test_in_data.astype(np.float32).flatten()
+        out_test = test_out_data.astype(np.float32).flatten()
+
+        if (args.normalize):
+            in_test = normalize(in_test).reshape(len(test_in_data),1)
+            out_test = normalize(out_test).reshape(len(test_out_data),1)
+    else:
+        # It is NOT advisable to use the same data set for testing and validation
+        # This gives a strong bias in evaluating the effectiveness of the training
+        in_test = in_val
+        out_test = out_val
 
     save_wav(args.path + "/train/" + args.name + "-input.wav", in_train)
     save_wav(args.path + "/train/" + args.name + "-target.wav", out_train)
@@ -118,82 +130,46 @@ def nonConditionedWavParse(args):
     save_wav(args.path + "/val/" + args.name + "-input.wav", in_val)
     save_wav(args.path + "/val/" + args.name + "-target.wav", out_val)
 
-def getFileMap():
-    ############   USER EDIT ##########################
-    # Each key is the parameter for conditioning, and each value is a list
-    # of two files, the in.wav and the out.wav for each parameter setting.
-
-    file_map = {
-      0.0 : [
-          'Recordings/20211027_LPB1_000_Training_Clean.wav',
-          'Recordings/20211027_LPB1_000_Training_Dirty.wav',
-          'Recordings/20211027_LPB1_000_Test_Clean.wav',
-          'Recordings/20211027_LPB1_000_Test_Dirty.wav',
-      ],
-      0.25 : [
-          'Recordings/20211027_LPB1_025_Training_Clean.wav',
-          'Recordings/20211027_LPB1_025_Training_Dirty.wav',
-          'Recordings/20211027_LPB1_025_Test_Clean.wav',
-          'Recordings/20211027_LPB1_025_Test_Dirty.wav',
-      ],
-      0.5 : [
-          'Recordings/20211027_LPB1_050_Training_Clean.wav',
-          'Recordings/20211027_LPB1_050_Training_Dirty.wav',
-          'Recordings/20211027_LPB1_050_Test_Clean.wav',
-          'Recordings/20211027_LPB1_050_Test_Dirty.wav',
-      ],
-      0.75 : [
-          'Recordings/20211027_LPB1_075_Training_Clean.wav',
-          'Recordings/20211027_LPB1_075_Training_Dirty.wav',
-          'Recordings/20211027_LPB1_075_Test_Clean.wav',
-          'Recordings/20211027_LPB1_075_Test_Dirty.wav',
-      ],
-      1.0 : [
-          'Recordings/20211027_LPB1_100_Training_Clean.wav',
-          'Recordings/20211027_LPB1_100_Training_Dirty.wav',
-          'Recordings/20211027_LPB1_100_Test_Clean.wav',
-          'Recordings/20211027_LPB1_100_Test_Dirty.wav',
-      ]
-    }
-
-    ############   USER EDIT ##########################
-    return file_map
 
 def conditionedWavParse(args):
     '''
-    This script processes multiple datasets to condition on a given value, such
-    as Gain. It currently set up to handle 1 conditioned parameter.
-    The processed "input" data will be a stereo wav file (2 channels), where the
-    first channel is the audio data, and the second is the conditioned parameter.
-    Each additional wav file will be concatenated to the previous for both
-    training and validation/test audio.
+    This script processes multiple datasets to defined conditions of at
+    most 65534 parameters due to the limited number of channels in a wav file.
+
+    The script assumes that all parameters are normalized to a max of 1 (floating
+    point 32).
+
     The processed "output" data will be a concatenated mono wav file.
 
-    Note: Ensure to use the "is 2" (input size = 2) arg with dist_model_recnet.py
-          on the conditioned data.
+    Note: Ensure to use the "is <num of parameters + 1>"  with dist_model_recnet.py
+    on the conditioned data.
 
     Note: This is intended to be used with the colab conditioning training script.
 
     Note: Assumes all .wav files are mono, float32, no metadata
     '''
-    # Load all datasets (assuming each is a float32 single channel wav file)    
-    file_map = getFileMap()
+    # Open the configureation
+    with open(args.parameterize, "r") as read_file:
+        data = json.load(read_file)
+
+    params = data["Number of Parameters"]
+
 
     # Load and Preprocess Data ###########################################
-    all_clean_train = np.array([[],[]]) # 2 channels of all (in audio, param)
-    all_clean_val = np.array([[],[]]) # 2 channels of all (in audio, param)
-    all_clean_test = np.array([[],[]]) # 2 channels of all (in audio, param)
+    all_clean_train = np.array([[]]*(params+1)) # 1 channel for audio, n channels per parameters
+    all_clean_val = np.array([[]]*(params+1)) # 1 channel for audio, n channels per parameters
+    all_clean_test = np.array([[]]*(params+1)) # 1 channel for audio, n channels per parameters
     all_target_train = np.array([[]]) # 1 channels of all (out audio)
     all_target_val = np.array([[]]) # 1 channels of all (out audio)
     all_target_test = np.array([[]]) # 1 channels of all (out audio)
 
-    for param in sorted(file_map.keys()):
+    for ds in data["Data Sets"]:
 
         # Load and Preprocess Data ###########################################
-        in_rate, in_data = wavfile.read(file_map[param][0])
-        out_rate, out_data = wavfile.read(file_map[param][1])
-        test_in_rate, test_in_data = wavfile.read(file_map[param][2])
-        test_out_rate, test_out_data = wavfile.read(file_map[param][3])
+        in_rate, in_data = wavfile.read(ds["TrainingClean"])
+        out_rate, out_data = wavfile.read(ds["TrainingTarget"])
+        test_in_rate, test_in_data = wavfile.read(ds["TestClean"])
+        test_out_rate, test_out_data = wavfile.read(ds["TestTarget"])
 
         clean_data = in_data.astype(np.float32).flatten()
         target_data = out_data.astype(np.float32).flatten()
@@ -213,15 +189,27 @@ def conditionedWavParse(args):
             # Split the data on a twenty percent mod
             in_train, out_train, in_val, out_val = sliceOnMod(clean_data, target_data, args.mod_split)
 
-        # Create the parameter arrays
-        param_temp_train = np.array([param]*len(in_train))
-        param_temp_val = np.array([param]*len(in_val))
-        param_temp_test = np.array([param]*len(in_test))
+        # Initialize lists to handle the number of parameters
+        params_train = []
+        params_val = []
+        params_test = []
+
+        # Create a list of np arrays of the parameter values
+        for val in ds["Parameters"]:
+            # Create the parameter arrays
+            params_train.append(np.array([val]*len(in_train)))
+            params_val.append(np.array([val]*len(in_val)))
+            params_test.append(np.array([val]*len(in_test)))
+
+        # Convert the lists to numpy arrays
+        params_train = np.array(params_train)
+        params_val = np.array(params_val)
+        params_test = np.array(params_test)
 
         # Append the audio and paramters to the full data sets 
-        all_clean_train = np.append(all_clean_train, np.array([in_train, param_temp_train]), axis=1)
-        all_clean_val = np.append(all_clean_val, np.array([in_val, param_temp_val]), axis=1)
-        all_clean_test = np.append(all_clean_test, np.array([in_test, param_temp_test]), axis=1)
+        all_clean_train = np.append(all_clean_train, np.append([in_train],params_train, axis=0), axis = 1)
+        all_clean_val = np.append(all_clean_val , np.append([in_val],params_val, axis=0), axis = 1)
+        all_clean_test = np.append(all_clean_test , np.append([in_test],params_test, axis=0), axis = 1)
 
         all_target_train = np.append(all_target_train, out_train)
         all_target_val = np.append(all_target_val, out_val)
@@ -243,20 +231,21 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description='''This script prepairs the data data to be trained'''
     )
-    parser.add_argument("in_file")
-    parser.add_argument("out_file")
-    parser.add_argument("test_in_file")
-    parser.add_argument("test_out_file")
-    parser.add_argument("--normalize", "-n", type=bool, default=False)
-    parser.add_argument("--parameter", "-p", type=bool, default=False)
     parser.add_argument("name")
+    # parser.add_argument("--in_file", "-in", type=str, default=None )
+    # parser.add_argument("--out_file", "-out", type=str, default=None)
+    # parser.add_argument("--test_in_file", "-tin", type=str, default=None)
+    # parser.add_argument("--test_out_file", "-tout", type=str, default=None)
+    parser.add_argument("--snapshot", "-s", nargs="+", help="Snapshot configuration. TRAINING_IN TRAINING_OUT OPTIONAL_TEST_IN OPTIONAL_TEST_OUT")
+    parser.add_argument("--normalize", "-n", type=bool, default=False)
+    parser.add_argument("--parameterize", "-p", type=str, default=None)
     parser.add_argument("--mod_split", '-ms', default=5, help="The default splitting mechanism. Splits the training and validation data on a 5 mod (or 20 percent).")
     parser.add_argument("--random_split", '-rs', type=float, default=None, help="By default, the training is split on a modulus. However, desingnating a percentage between 0 and 100 will create a random data split between the training and validatation sets.")
-    parser.add_argument("--path", type=str, default="Data")
+    parser.add_argument("--path", type=str, default="Data", help="Path to store the processed data.")
 
     args = parser.parse_args()
 
-    if args.parameter:
+    if args.parameterize:
         print("Parameterized Data")
         conditionedWavParse(args)
 
