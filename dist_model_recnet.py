@@ -99,11 +99,7 @@ def main(args):
     dataset.create_subset('val')
     dataset.load_file(os.path.join('val', args.file_name), 'val')
 
-    dataset.create_subset('test')
-    dataset.load_file(os.path.join('test', args.file_name), 'test')
-
-
-    # If training is restarting, this will ensure the previously elapsed training time is added to the total
+        # If training is restarting, this will ensure the previously elapsed training time is added to the total
     init_time = time.time() - start_time + train_track['total_time']*3600
     # Set network save_state flag to true, so when the save_model method is called the network weights are saved
     network.save_state = True
@@ -133,7 +129,7 @@ def main(args):
                 patience_counter = 0
                 network.save_model('model_best', save_path)
                 write(os.path.join(save_path, "best_val_out.wav"),
-                      dataset.subsets['test'].fs, val_output.cpu().numpy()[:, 0, 0])
+                      dataset.subsets['val'].fs, val_output.cpu().numpy()[:, 0, 0])
             else:
                 patience_counter += 1
             train_track.val_epoch_update(val_loss.item(), val_ep_st_time, time.time())
@@ -150,6 +146,17 @@ def main(args):
         if args.validation_p and patience_counter > args.validation_p:
             print('validation patience limit reached at epoch ' + str(epoch))
             break
+
+    # Remove dataset from memory
+    del dataset
+    # Empty the CUDA Cache
+    # torch.cuda.empty_cache()
+
+    # Create a new data set
+    dataset = CAMLdataset.DataSet(data_dir='Data')
+    # Then load the Test data set
+    dataset.create_subset('test')
+    dataset.load_file(os.path.join('test', args.file_name), 'test')
 
     print("Done Training")
     lossESR = training.ESRLoss()
@@ -267,6 +274,7 @@ if __name__ == "__main__":
         torch.manual_seed(args.seed)
         np.random.seed(args.seed)
         random.seed(args.seed)
+
 
     main(args)
 
