@@ -12,9 +12,14 @@ cd Automated-GuitarAmpModelling
 git submodule update --init --recursive
 ```
 ```
+# If Locally, install the required python packages 
+# Using a python virtual enviroment is advisable
+pip install -r ./requirements.txt
+```
+```
 # Add your input.wav and output.wav to the top directory, and add your config to the config directory.
 # Name the .wav files and config file appropriately in the following command
-python prep_wav.py input.wav output.wav acoustic1-pre
+python prep_wav.py acoustic1-pre -s input.wav output.wav 
 ```
 ```
 # Edit to use your config in the following command
@@ -31,7 +36,7 @@ python plot.py acoustic1-pre
 This repository contains neural network training scripts and trained models of guitar amplifiers and distortion pedals. The 'Results' directory contains some example recurrent neural network models trained to emulate the ht-1 amplifier and Big Muff Pi fuzz pedal, these models are described in this [conference paper](https://www.dafx.de/paper-archive/2019/DAFx2019_paper_43.pdf)
 
 ## Using this repository
-It is possible to use this repository to train your own models. To model a different distortion pedal or amplifier, a dataset recorded from your target device is required, example datasets recorded from the ht1 and Big Muff Pi are contained in the 'Data' directory. 
+It is possible to use this repository to train your own models. To model a different distortion pedal or amplifier, a dataset recorded from your target device is required, example datasets recorded from the ht1 and Big Muff Pi are contained in the 'Data' directory. For a set of examples of different trainings, please refer to the `./ExampleOfDifferentModelTraining.ipynb` file. 
 
 ### Cloning this repository
 
@@ -41,7 +46,7 @@ git clone --recurse-submodules https://github.com/Alec-Wright/NeuralGuitarAmpMod
 
 ### Python Environment
 
-Using this repository requires a python environment with the 'pytorch', 'scipy', 'tensorboard' and 'numpy' packages installed. 
+Using this repository requires a python environment with the 'pytorch', 'scipy', 'tensorboard' and 'numpy' packages installed. A requirements.txt has been generated and is included, however your milage may vary based on your operating system and set up due to the nature of python dependency handling. 
 Additionally this repository uses the 'CoreAudioML' package, which is included as a submodule. Cloining the repo as described in 'Cloning this repository' ensures the CoreAudioML package is also downloaded.
 
 ### Processing Audio
@@ -70,6 +75,23 @@ Where in this case the script will look for the file ht11.json in the the 'Confi
 During training, the script will save some data to a folder in the Results directory. These are, the lowest loss achieved on the validation set so far in 'bestvloss.txt', as well as a copy of that model 'model_best.json', and the audio created by that model 'best_val_out.wav'. The neural network at the end of the most recent training epoch is also saved, as 'model.json'. When training is complete the test dataset is processed, and the audio produced and the test loss is also saved to the same directory.
 
 A trained model contained in one of the 'model.json' or 'model_best.json' files can be loaded, see the 'proc_audio.py' script for an example of how this is done.
+
+### Determinism
+
+If determinism is desired, `dist_model_recnet.py` provides an option to seed all of the random number generators used at once. However, if NVIDIA CUDA is used, you must also handle the non-deterministic behavior of CUDA for RNN calculations as is described in the [Rev8 Release Notes](https://docs.nvidia.com/deeplearning/cudnn/release-notes/rel_8.html). Because it is unadvisable to gloabaly configure the CUDA buffer size manually, it is recomended to launch jupyter with the CUDE buffer configuation as shown below for two buffers of size 4096.
+```
+CUBLAS_WORKSPACE_CONFIG=:4096:2 jupyter notebook
+```
+or for 8 buffers of 16:
+```
+CUBLAS_WORKSPACE_CONFIG=:16:8 jupyter notebook
+```
+
+### Tensorboard
+The `./dist_model_recnet.py` has been implemented with PyTorch's Tensorboard hooks. To see the data, run:
+```
+tensorboard --logdir ./TensorboardData
+```
 
 ### Feedback
 
