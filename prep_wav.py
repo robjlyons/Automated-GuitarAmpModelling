@@ -118,6 +118,8 @@ def nonConditionedWavParse(args):
     else:
         # It is NOT advisable to use the same data set for testing and validation
         # This gives a strong bias in evaluating the effectiveness of the training
+        print("\n!!WARNING!!\nThe test set and validation set are the same!")
+        print("Thus the test results will be significantly biased!\n")
         in_test = in_val
         out_test = out_val
 
@@ -152,8 +154,18 @@ def conditionedWavParse(args):
     with open(args.parameterize, "r") as read_file:
         data = json.load(read_file)
 
-    params = data["Number of Parameters"]
+    # Test to see if there are separate test data sets
+    seprateTestSet = True
+    try:
+        a = data['Data Sets'][0]["TestClean"]
+        a = data['Data Sets'][0]["TestTarget"]
+    except KeyError:
+        seprateTestSet = False
+        print("\n!!WARNING!!\nnThe test set and validation set are the same!")
+        print("Thus the test results will be significantly biased!\n")
 
+
+    params = data["Number of Parameters"]
 
     # Load and Preprocess Data ###########################################
     all_clean_train = np.array([[]]*(params+1)) # 1 channel for audio, n channels per parameters
@@ -163,18 +175,14 @@ def conditionedWavParse(args):
     all_target_val = np.array([[]]) # 1 channels of all (out audio)
     all_target_test = np.array([[]]) # 1 channels of all (out audio)
 
+
     for ds in data["Data Sets"]:
 
-        # Load and Preprocess Data ###########################################
+        # Load and Preprocess Data
         in_rate, in_data = wavfile.read(ds["TrainingClean"])
         out_rate, out_data = wavfile.read(ds["TrainingTarget"])
-        test_in_rate, test_in_data = wavfile.read(ds["TestClean"])
-        test_out_rate, test_out_data = wavfile.read(ds["TestTarget"])
-
         clean_data = in_data.astype(np.float32).flatten()
         target_data = out_data.astype(np.float32).flatten()
-        in_test = test_in_data.astype(np.float32).flatten()
-        out_test = test_out_data.astype(np.float32).flatten()
 
         # If Desired Normalize the data
         if (args.normalize):
@@ -183,11 +191,28 @@ def conditionedWavParse(args):
             in_test = normalize(in_test).reshape(len(test_in_data),1)
             out_test = normalize(out_test).reshape(len(test_out_data),1)
 
+        # Make the Training and validation split
         if args.random_split:
             in_train, out_train, in_val, out_val = sliceRandomPercentage(clean_data, target_data, args.random_split)
         else:
             # Split the data on a twenty percent mod
             in_train, out_train, in_val, out_val = sliceOnMod(clean_data, target_data, args.mod_split)
+
+
+        # Process the Test Data. If it's a separate set, process that set. 
+        # If there is not a separeate set, use the validation data for testing.
+        if (seprateTestSet):
+            test_in_rate, test_in_data = wavfile.read(ds["TestClean"])
+            test_out_rate, test_out_data = wavfile.read(ds["TestTarget"])
+            in_test = test_in_data.astype(np.float32).flatten()
+            out_test = test_out_data.astype(np.float32).flatten()
+
+            if (args.normalize):
+                in_test = normalize(in_test).reshape(len(test_in_data),1)
+                out_test = normalize(out_test).reshape(len(test_out_data),1)
+        else:
+            in_test = in_val
+            out_test = out_val
 
         # Initialize lists to handle the number of parameters
         params_train = []
@@ -223,7 +248,6 @@ def conditionedWavParse(args):
     save_wav(args.path + "/train/" + args.name + "-target.wav", all_target_train)
     save_wav(args.path + "/val/" + args.name + "-target.wav", all_target_val)
     save_wav(args.path + "/test/" + args.name + "-target.wav", all_target_test)
-
 
 
 

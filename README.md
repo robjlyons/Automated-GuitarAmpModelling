@@ -76,6 +76,30 @@ During training, the script will save some data to a folder in the Results direc
 
 A trained model contained in one of the 'model.json' or 'model_best.json' files can be loaded, see the 'proc_audio.py' script for an example of how this is done.
 
+### Parameterization Configuration
+The configuration file for a Parameterized training looks rather like the following.
+```
+{
+    "Number of Parameters":2,
+    "Data Sets":[
+    {
+	"Parameters": [ 0.0, 0.0 ],
+	"TrainingClean": "./Recordings/DS1/20211105_LPB1_000_000_Training_Clean.wav",
+	"TrainingTarget": "./Recordings/DS1/20211105_LPB1_000_000_Training_Dirty.wav",
+	"TestClean": "./Recordings/DS1/20211105_LPB1_000_000_Test_Clean.wav",
+	"TestTarget": "./Recordings/DS1/20211105_LPB1_000_000_Test_Dirty.wav"
+    },
+    {
+	"Parameters": [ 0.0, 0.25 ],
+	"TrainingClean": "./Recordings/DS1/20211105_LPB1_000_025_Training_Clean.wav",
+	"TrainingTarget": "./Recordings/DS1/20211105_LPB1_000_025_Training_Dirty.wav",
+	"TestClean": "./Recordings/DS1/20211105_LPB1_000_025_Test_Clean.wav",
+	"TestTarget": "./Recordings/DS1/20211105_LPB1_000_025_Test_Dirty.wav"
+    },
+    ...
+```
+Note that the `"TestClean"` and `"TestTarget"` data sets are optional; if they are not included, the validation data set will be used for the training. However, this leads to a biased test results and is not advised for comparing model performance!
+
 ### Determinism
 
 If determinism is desired, `dist_model_recnet.py` provides an option to seed all of the random number generators used at once. However, if NVIDIA CUDA is used, you must also handle the non-deterministic behavior of CUDA for RNN calculations as is described in the [Rev8 Release Notes](https://docs.nvidia.com/deeplearning/cudnn/release-notes/rel_8.html). Because it is unadvisable to gloabaly configure the CUDA buffer size manually, it is recomended to launch jupyter with the CUDE buffer configuation as shown below for two buffers of size 4096.
