@@ -14,7 +14,7 @@ git submodule update --init --recursive
 ```
 # Add your input.wav and output.wav to the top directory, and add your config to the config directory.
 # Name the .wav files and config file appropriately in the following command
-python prep_wav.py input.wav output.wav acoustic1-pre
+python prep_wav.py acoustic1-pre-s input.wav output.wav 
 ```
 ```
 # Edit to use your config in the following command
@@ -31,7 +31,7 @@ python plot.py acoustic1-pre
 This repository contains neural network training scripts and trained models of guitar amplifiers and distortion pedals. The 'Results' directory contains some example recurrent neural network models trained to emulate the ht-1 amplifier and Big Muff Pi fuzz pedal, these models are described in this [conference paper](https://www.dafx.de/paper-archive/2019/DAFx2019_paper_43.pdf)
 
 ## Using this repository
-It is possible to use this repository to train your own models. To model a different distortion pedal or amplifier, a dataset recorded from your target device is required, example datasets recorded from the ht1 and Big Muff Pi are contained in the 'Data' directory. 
+It is possible to use this repository to train your own models. To model a different distortion pedal or amplifier, a dataset recorded from your target device is required, example datasets recorded from the ht1 and Big Muff Pi are contained in the 'Data' directory. For a set of examples of different trainings, please refer to the `./ExampleOfDifferentModelTraining.ipynb` file. 
 
 ### Cloning this repository
 
@@ -73,7 +73,7 @@ A trained model contained in one of the 'model.json' or 'model_best.json' files 
 
 ### Determinism
 
-If determinism is desired, `dist_model_recnet.py` provides an option to seed all of the random number generators used at once. However, if NVIDIA CUDA is used, you must also handle the non-deterministic behavior of CUDA for RNN calculations as is described in the [Rev8 Release Notes/](https://docs.nvidia.com/deeplearning/cudnn/release-notes/rel_8.html). Because it is unadvisable to gloabaly configure the CUDA buffer size manually, it is recomended to launch jupyter with the CUDE buffer configuation as shown below for two buffers of size 4096.
+If determinism is desired, `dist_model_recnet.py` provides an option to seed all of the random number generators used at once. However, if NVIDIA CUDA is used, you must also handle the non-deterministic behavior of CUDA for RNN calculations as is described in the [Rev8 Release Notes](https://docs.nvidia.com/deeplearning/cudnn/release-notes/rel_8.html). Because it is unadvisable to gloabaly configure the CUDA buffer size manually, it is recomended to launch jupyter with the CUDE buffer configuation as shown below for two buffers of size 4096.
 ```
 CUBLAS_WORKSPACE_CONFIG=:4096:2 jupyter notebook
 ```
