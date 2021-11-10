@@ -12,9 +12,14 @@ cd Automated-GuitarAmpModelling
 git submodule update --init --recursive
 ```
 ```
+# If Locally, install the required python packages 
+# Using a python virtual enviroment is advisable
+pip install -r ./requirements.txt
+```
+```
 # Add your input.wav and output.wav to the top directory, and add your config to the config directory.
 # Name the .wav files and config file appropriately in the following command
-python prep_wav.py acoustic1-pre-s input.wav output.wav 
+python prep_wav.py acoustic1-pre -s input.wav output.wav 
 ```
 ```
 # Edit to use your config in the following command
@@ -41,7 +46,7 @@ git clone --recurse-submodules https://github.com/Alec-Wright/NeuralGuitarAmpMod
 
 ### Python Environment
 
-Using this repository requires a python environment with the 'pytorch', 'scipy', 'tensorboard' and 'numpy' packages installed. 
+Using this repository requires a python environment with the 'pytorch', 'scipy', 'tensorboard' and 'numpy' packages installed. A requirements.txt has been generated and is included, however your milage may vary based on your operating system and set up due to the nature of python dependency handling. 
 Additionally this repository uses the 'CoreAudioML' package, which is included as a submodule. Cloining the repo as described in 'Cloning this repository' ensures the CoreAudioML package is also downloaded.
 
 ### Processing Audio
@@ -80,6 +85,12 @@ CUBLAS_WORKSPACE_CONFIG=:4096:2 jupyter notebook
 or for 8 buffers of 16:
 ```
 CUBLAS_WORKSPACE_CONFIG=:16:8 jupyter notebook
+```
+
+### Tensorboard
+The `./dist_model_recnet.py` has been implemented with PyTorch's Tensorboard hooks. To see the data, run:
+```
+tensorboard --logdir ./TensorboardData
 ```
 
 ### Feedback

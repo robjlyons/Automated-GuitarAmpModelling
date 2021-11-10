@@ -88,7 +88,7 @@ def main(args):
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimiser, 'min', factor=0.5, patience=5, verbose=True)
     loss_functions = training.LossWrapper(args.loss_fcns, args.pre_filt)
     train_track = training.TrainTrack()
-    writer = SummaryWriter(os.path.join('runs2', model_name))
+    writer = SummaryWriter(os.path.join('TensorboardData', model_name))
 
     # Load dataset
     dataset = CAMLdataset.DataSet(data_dir='Data')
