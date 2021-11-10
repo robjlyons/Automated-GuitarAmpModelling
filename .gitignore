@@ -23,6 +23,12 @@ Configs/*
 !Configs/RNN1.json
 !Configs/RNN2.json
 !Configs/RNN3.json
+!Configs/RNN3-LPB1-ex1.json
+!Configs/RNN3-LPB1-ex2.json
+!Configs/RNN3-LPB1_Parameterized.json
+!Configs/RNN3-DS1_Parameterized.json
+!Configs/Parameterization-Config.json
+!Configs/Parameterization-Config-2.json
 Data/*
 !Data/test/ht1-input.wav
 !Data/test/ht1-target.wav
