@@ -252,4 +252,3 @@ if __name__ == "__main__":
     if cuda:
         with open(os.path.join(save_path, 'maxmemusage.txt'), 'w') as f:
             f.write(str(torch.cuda.max_memory_allocated()))
-
