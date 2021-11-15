@@ -38,7 +38,7 @@ Helper scipts have been added to aid in training conditioned models. These model
 
 You will still use mono, 32FP wav files for training conditioned models. See the ```Parameterization-Config.json``` and ```Parameterization-Config-2.json``` for examples on how to set up your audio data. Record 4-5 samples of the full range of a knob normalized as 0.0 to 1.0. For example: (0.0 0.33, 0.66, 1.0) or (0.0, 0.25, 0.5, 0.75, 1.0) for each knob or combination of knobs. 
 
-Note: The more knobs you include in your model, the more .wav files you will need. For example, 2 knobs at five steps each will have 5 * 5 = 25 different combinations, for 100 individual wav files (1 train/validation in, 1 train/validation out, 1 test in, 1 test out) for each knob combination. You can run training without separate test .wav files if desired, simply remove the "Test" entries from the config file. 
+Note: The more knobs you include in your model, the more .wav files you will need. For example, 2 knobs at five steps each will have 5 * 5 = 25 different combinations, for 100 individual wav files (1 train/validation in, 1 train/validation out, 1 test in, 1 test out) for each knob combination. You can train without separate test .wav files if desired, simply remove the "Test" entries from the config file. 
 
 Note: [NeuralPi](https://github.com/GuitarML/NeuralPi) version 1.3 has the ability to run models conditioned on a single parameter as a real-time guitar plugin (the conditioned parameter is assumed to be gain/drive).
 
