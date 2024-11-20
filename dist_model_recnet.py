@@ -18,28 +18,19 @@ from scipy.io.wavfile import write
 # from it, after checking the network in 'model.json' matches the architecture described in args. If no model file is
 # found, it creates a network according to the specification in args.
 def init_model(save_path, args):
-    # Search for an existing model in the save directory
+    """Initialize or load a model based on the configuration."""
     if miscfuncs.file_check('model.json', save_path) and args.load_model:
-        print('existing model file found, loading network')
+        print("Loading existing model...")
         model_data = miscfuncs.json_load('model', save_path)
-        # assertions to check that the model.json file is for the right neural network architecture
-        try:
-            assert model_data['model_data']['unit_type'] == args.unit_type
-            assert model_data['model_data']['input_size'] == args.input_size
-            assert model_data['model_data']['hidden_size'] == args.hidden_size
-            assert model_data['model_data']['output_size'] == args.output_size
-        except AssertionError:
-            print("model file found with network structure not matching config file structure")
-        network = networks.load_model(model_data)
-    # If no existing model is found, create a new one
+        return networks.load_model(model_data)
     else:
-        print('no saved model found, creating new network')
-        network = networks.SimpleRNN(input_size=args.input_size, unit_type=args.unit_type, hidden_size=args.hidden_size,
-                                     output_size=args.output_size, skip=args.skip_con)
-        network.save_state = False
+        print("No saved model found, creating a new one...")
+        network = networks.SimpleRNN(input_size=args.input_size, unit_type=args.unit_type,
+                                      hidden_size=args.hidden_size, output_size=args.output_size,
+                                      skip=args.skip_con, num_layers=args.num_layers,
+                                      bidirectional=args.bidirectional)
         network.save_model('model', save_path)
-    return network
-
+        return network
 
 def main(args):
     """The main method creates the recurrent network, trains it and carries out validation/testing """
@@ -267,6 +258,8 @@ if __name__ == "__main__":
     prsr.add_argument('--hidden_size', '-hs', default=16, type=int, help='Recurrent unit hidden state size')
     prsr.add_argument('--unit_type', '-ut', default='LSTM', help='LSTM or GRU or RNN')
     prsr.add_argument('--skip_con', '-sc', default=1, help='is there a skip connection for the input to the output')
+    parser.add_argument('--bidirectional', '-bd', type=bool, default=False,
+                        help="Enable bidirectional RNNs (applicable for LSTM/GRU/RNN).")
 
     args = prsr.parse_args()
 
