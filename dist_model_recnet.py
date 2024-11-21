@@ -258,7 +258,7 @@ if __name__ == "__main__":
     prsr.add_argument('--hidden_size', '-hs', default=16, type=int, help='Recurrent unit hidden state size')
     prsr.add_argument('--unit_type', '-ut', default='LSTM', help='LSTM or GRU or RNN')
     prsr.add_argument('--skip_con', '-sc', default=1, help='is there a skip connection for the input to the output')
-    parser.add_argument('--bidirectional', '-bd', type=bool, default=False,
+    par.add_argument('--bidirectional', '-bd', type=bool, default=False,
                         help="Enable bidirectional RNNs (applicable for LSTM/GRU/RNN).")
 
     args = prsr.parse_args()
