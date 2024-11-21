@@ -1,3 +1,5 @@
+%%writefile dist_model_recnet.py
+
 import CoreAudioML.miscfuncs as miscfuncs
 import numpy as np
 import random
@@ -10,13 +12,93 @@ from torch.utils.tensorboard import SummaryWriter
 import argparse
 import time
 import os
-import csv
 from scipy.io.wavfile import write
+import librosa
+from torch.nn.utils import clip_grad_norm_
+
+# ------------------- Data Augmentation ------------------- #
+
+def augment_audio(audio, sample_rate):
+    """
+    Apply online data augmentation.
+    :param audio: Input audio data as a PyTorch tensor.
+    :param sample_rate: Sample rate of the audio.
+    :return: Augmented audio data as a PyTorch tensor.
+    """
+    # Ensure audio is on the CPU for NumPy operations
+    audio = audio.cpu().numpy()
+
+    # Check signal length
+    if audio.ndim > 1:
+        print(f"Unexpected audio shape before augmentation: {audio.shape}")
+        audio = audio[:, 0]  # Select first channel if multiple dimensions
+
+    if len(audio) < 2048:  # Minimum length for FFT
+        print(f"Skipping augmentation: Audio length too short ({len(audio)} samples)")
+        return torch.tensor(audio).to('cuda' if torch.cuda.is_available() else 'cpu')
+
+    # Add random noise
+    noise = np.random.normal(0, 0.005, audio.shape)
+    augmented_audio = audio + noise
+
+    # Apply pitch shift
+    try:
+        pitch_shift = np.random.uniform(-2, 2)  # Shift by up to 2 semitones
+        augmented_audio = librosa.effects.pitch_shift(y=augmented_audio, sr=sample_rate, n_steps=pitch_shift)
+    except Exception as e:
+        print(f"Pitch shifting failed: {e}")
+        return torch.tensor(audio).to('cuda' if torch.cuda.is_available() else 'cpu')
+
+    # Convert back to PyTorch tensor and move to the original device
+    return torch.tensor(augmented_audio).to('cuda' if torch.cuda.is_available() else 'cpu')
+
+def print_dataset_statistics(dataset, subset_name):
+    """
+    Calculate and print dataset statistics.
+    :param dataset: The dataset object.
+    :param subset_name: Name of the subset (e.g., "train", "val").
+    """
+    print(f"Statistics for {subset_name} dataset:")
+    print(f"Number of samples: {len(dataset)}")
+    #print(f"Sample rate: {dataset.fs}")
+    #print(f"Duration (seconds): {len(dataset) / dataset.fs}")
+    print(f"Mean: {np.mean(dataset)}")
+    print(f"Standard deviation: {np.std(dataset)}")
 
 
-# This function takes a directory as argument, looks for an existing model file called 'model.json' and loads a network
-# from it, after checking the network in 'model.json' matches the architecture described in args. If no model file is
-# found, it creates a network according to the specification in args.
+def apply_augmentations(dataset, sample_rate):
+    """
+    Apply augmentations to the dataset.
+    Process each segment individually to ensure compatibility with augmentation functions.
+    """
+    for subset_name, subset in dataset.subsets.items():
+        print(f"Applying augmentations to {subset_name} dataset...")
+        augmented_inputs = []
+        augmented_targets = []
+
+        # Loop through each segment
+        for i in range(len(subset.data['input'])):
+            input_segment = subset.data['input'][i]
+            target_segment = subset.data['target'][i]
+
+            augmented_input = input_segment.clone()  # Clone to ensure immutability is avoided
+            augmented_target = target_segment.clone()
+
+            # Apply augmentation to each channel
+            for segment_idx in range(input_segment.shape[1]):
+                augmented_input[:, segment_idx, 0] = augment_audio(input_segment[:, segment_idx, 0], sample_rate)
+                augmented_target[:, segment_idx, 0] = augment_audio(target_segment[:, segment_idx, 0], sample_rate)
+
+            augmented_inputs.append(augmented_input)
+            augmented_targets.append(augmented_target)
+
+        # Replace the original data with the augmented version
+        subset.data['input'] = torch.stack(augmented_inputs)
+        subset.data['target'] = torch.stack(augmented_targets)
+
+
+# ------------------- Model Initialization ------------------- #
+
 def init_model(save_path, args):
     """Initialize or load a model based on the configuration."""
     if miscfuncs.file_check('model.json', save_path) and args.load_model:
@@ -32,8 +114,10 @@ def init_model(save_path, args):
         network.save_model('model', save_path)
         return network
 
+# ------------------- Main Function ------------------- #
+
 def main(args):
-    """The main method creates the recurrent network, trains it and carries out validation/testing """
+    """The main method creates the recurrent network, trains it, and carries out validation/testing."""
     start_time = time.time()
 
     # If a load_config argument was provided, construct the file path to the config file
@@ -60,26 +144,21 @@ def main(args):
     # Generate name of directory where results will be saved
     save_path = os.path.join(args.save_location, args.device + '-' + args.load_config)
 
-    # Check if an existing saved model exists, and load it, otherwise creates a new model
+    # Check if an existing saved model exists, and load it, otherwise create a new model
     network = init_model(save_path, args)
 
-    # Check if a cuda device is available
-    if not torch.cuda.is_available() or args.cuda == 0:
-        print('cuda device not available/not selected')
-        cuda = 0
-    else:
-        torch.set_default_tensor_type('torch.cuda.FloatTensor')
-        torch.cuda.set_device(0)
-        print('cuda device available')
-        network = network.cuda()
-        cuda = 1
+    # Enable CUDA if available
+    device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
+    print(f"Using device: {device}")
+    network.to(device)
 
-    # Set up training optimiser + scheduler + loss fcns and training info tracker
+    # Set up training optimizer + scheduler + loss functions and training info tracker
     optimiser = torch.optim.Adam(network.parameters(), lr=args.learn_rate, weight_decay=1e-4)
+    scaler = torch.cuda.amp.GradScaler()  # Mixed-precision training
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimiser, 'min', factor=0.5, patience=5, verbose=True)
     loss_functions = training.LossWrapper(args.loss_fcns, args.pre_filt)
     train_track = training.TrainTrack()
-    writer = SummaryWriter(os.path.join('TensorboardData', model_name))
+    writer = SummaryWriter(os.path.join('TensorboardData', args.device))
 
     # Load dataset
     dataset = CAMLdataset.DataSet(data_dir='Data')
@@ -89,107 +168,95 @@ def main(args):
 
     dataset.create_subset('val')
     dataset.load_file(os.path.join('val', args.file_name), 'val')
+    dataset.fs = 44100  # Replace with actual sample rate if available
 
-        # If training is restarting, this will ensure the previously elapsed training time is added to the total
-    init_time = time.time() - start_time + train_track['total_time']*3600
-    # Set network save_state flag to true, so when the save_model method is called the network weights are saved
+    print("Train dataset input shape:", dataset.subsets['train'].data['input'][0].shape)
+    print("Train dataset target shape:", dataset.subsets['train'].data['target'][0].shape)
+
+    # Apply augmentations
+    apply_augmentations(dataset, dataset.fs)
+
+    # Training loop
+    init_time = time.time() - start_time + train_track['total_time'] * 3600
     network.save_state = True
     patience_counter = 0
 
-    # This is where training happens
-    # the network records the last epoch number, so if training is restarted it will start at the correct epoch number
     for epoch in range(train_track['current_epoch'] + 1, args.epochs + 1):
-        print("Epoch: ", epoch)
-        ep_st_time = time.time()
+          print(f"Epoch: {epoch}")
+          ep_start_time = time.time()
+          network.train()
 
-        # Run 1 epoch of training,
-        epoch_loss = network.train_epoch(dataset.subsets['train'].data['input'][0],
-                                         dataset.subsets['train'].data['target'][0],
-                                         loss_functions, optimiser, args.batch_size, args.init_len, args.up_fr)
+          # Initialize epoch loss
+          total_loss = 0.0
 
-        writer.add_scalar('Time/EpochTrainingTime', time.time()-ep_st_time, epoch)
+          # Mixed-precision training
+          with torch.cuda.amp.autocast(enabled=True):  # Use torch.cuda.amp.autocast without device_type
+              for i in range(0, dataset.subsets['train'].data['input'][0].size(0), args.batch_size):
+                  inputs = dataset.subsets['train'].data['input'][0][i:i + args.batch_size].to(device)
+                  targets = dataset.subsets['train'].data['target'][0][i:i + args.batch_size].to(device)
 
-        # Run validation
-        if epoch % args.validation_f == 0:
-            val_ep_st_time = time.time()
-            val_output, val_loss = network.process_data(dataset.subsets['val'].data['input'][0],
-                                             dataset.subsets['val'].data['target'][0], loss_functions, args.val_chunk)
-            scheduler.step(val_loss)
-            print("Val loss:", val_loss)
-            if val_loss < train_track['best_val_loss']:
-                patience_counter = 0
-                network.save_model('model_best', save_path)
-                write(os.path.join(save_path, "best_val_out.wav"),
-                      dataset.subsets['val'].fs, val_output.cpu().numpy()[:, 0, 0])
-            else:
-                patience_counter += 1
-            train_track.val_epoch_update(val_loss.item(), val_ep_st_time, time.time())
-            writer.add_scalar('TrainingAndValidation/ValidationLoss', train_track['validation_losses'][-1], epoch)
+                  optimiser.zero_grad()  # Reset gradients
 
-        print('current learning rate: ' + str(optimiser.param_groups[0]['lr']))
-        train_track.train_epoch_update(epoch_loss.item(), ep_st_time, time.time(), init_time, epoch)
-        # write loss to the tensorboard (just for recording purposes)
-        writer.add_scalar('TrainingAndValidation/TrainingLoss', train_track['training_losses'][-1], epoch)
-        writer.add_scalar('TrainingAndValidation/LearningRate', optimiser.param_groups[0]['lr'], epoch)
-        network.save_model('model', save_path)
-        miscfuncs.json_save(train_track, 'training_stats', save_path)
+                  # Forward pass
+                  predictions = network(inputs)
+                  loss = loss_functions(predictions, targets)
 
-        if args.validation_p and patience_counter > args.validation_p:
-            print('validation patience limit reached at epoch ' + str(epoch))
-            break
+                  # Scale the loss and backpropagate
+                  scaler.scale(loss).backward()
 
-    # Remove dataset from memory
-    del dataset
-    # Empty the CUDA Cache
-    # torch.cuda.empty_cache()
+                  # Gradient clipping (optional for stability)
+                  clip_grad_norm_(network.parameters(), max_norm=1.0)
 
-    # Create a new data set
-    dataset = CAMLdataset.DataSet(data_dir='Data')
-    # Then load the Test data set
+                  # Optimizer step with scaler
+                  scaler.step(optimiser)
+                  scaler.update()
+
+                  total_loss += loss.item() * inputs.size(0)  # Accumulate batch loss
+
+          epoch_loss = total_loss / dataset.subsets['train'].data['input'][0].size(0)  # Average loss
+          writer.add_scalar('Training/EpochLoss', epoch_loss, epoch)
+
+          # Validation
+          if epoch % args.validation_f == 0:
+              network.eval()
+              with torch.no_grad():
+                  val_output, val_loss = network.process_data(
+                      dataset.subsets['val'].data['input'][0].to(device),
+                      dataset.subsets['val'].data['target'][0].to(device), loss_functions, args.val_chunk
+                  )
+              scheduler.step(val_loss)
+              print(f"Validation loss: {val_loss}")
+
+              if val_loss < train_track['best_val_loss']:
+                  patience_counter = 0
+                  network.save_model('model_best', save_path)
+              else:
+                  patience_counter += 1
+
+              writer.add_scalar('Validation/Loss', val_loss.item(), epoch)
+
+          # Log epoch metrics
+          writer.add_scalar('Training/Loss', epoch_loss, epoch)
+          writer.add_scalar('Training/LearningRate', optimiser.param_groups[0]['lr'], epoch)
+
+          if patience_counter >= args.validation_p:
+              print(f"Early stopping triggered at epoch {epoch}")
+              break
+
+          print(f"Epoch {epoch} complete. Loss: {epoch_loss}")
+
+
+    print("Training complete. Running tests...")
+
+    # Test the model
     dataset.create_subset('test')
-    dataset.load_file(os.path.join('test', args.file_name), 'test')
-
-    print("Done Training")
-    lossESR = training.ESRLoss()
-    lossDC = training.DCLoss()
-
-    print("Testing the final Model")
-    # Test the model the training ended with
+    dataset.load_file(os.path.join(args.data_location, 'test', args.file_name), 'test')
     test_output, test_loss = network.process_data(dataset.subsets['test'].data['input'][0],
-                                                 dataset.subsets['test'].data['target'][0], loss_functions, args.test_chunk)
-    test_loss_ESR = lossESR(test_output, dataset.subsets['test'].data['target'][0])
-    test_loss_DC = lossDC(test_output, dataset.subsets['test'].data['target'][0])
-    write(os.path.join(save_path, "test_out_final.wav"), dataset.subsets['test'].fs, test_output.cpu().numpy()[:, 0, 0])
-    writer.add_scalar('Testing/FinalTestLoss', test_loss.item())
-    writer.add_scalar('Testing/FinalTestESR', test_loss_ESR.item())
-    writer.add_scalar('Testing/FinalTestDC', test_loss_DC.item())
+                                                  dataset.subsets['test'].data['target'][0], loss_functions,
+                                                  args.test_chunk)
+    writer.add_scalar('Testing/Loss', test_loss.item())
 
-    train_track['test_loss_final'] = test_loss.item()
-    train_track['test_lossESR_final'] = test_loss_ESR.item()
-
-    print("Testing the best Model")
-    # Test the best model
-    best_val_net = miscfuncs.json_load('model_best', save_path)
-    network = networks.load_model(best_val_net)
-    test_output, test_loss = network.process_data(dataset.subsets['test'].data['input'][0],
-                                                 dataset.subsets['test'].data['target'][0], loss_functions, args.test_chunk)
-    test_loss_ESR = lossESR(test_output, dataset.subsets['test'].data['target'][0])
-    test_loss_DC = lossDC(test_output, dataset.subsets['test'].data['target'][0])
-    write(os.path.join(save_path, "test_out_best.wav"),
-         dataset.subsets['test'].fs, test_output.cpu().numpy()[:, 0, 0])
-    writer.add_scalar('Testing/BestTestLoss', test_loss.item())
-    writer.add_scalar('Testing/BestTestESR', test_loss_ESR.item())
-    writer.add_scalar('Testing/BestTestDC', test_loss_DC.item())
-    train_track['test_loss_best'] = test_loss.item()
-    train_track['test_lossESR_best'] = test_loss_ESR.item()
-
-    print("Finished Training: " + model_name)
-
-    miscfuncs.json_save(train_track, 'training_stats', save_path)
-    if cuda:
-        with open(os.path.join(save_path, 'maxmemusage.txt'), 'w') as f:
-            f.write(str(torch.cuda.max_memory_allocated()))
-
+    print(f"Final test loss: {test_loss.item()}")
 
 
 if __name__ == "__main__":
@@ -259,17 +326,8 @@ if __name__ == "__main__":
     prsr.add_argument('--unit_type', '-ut', default='LSTM', help='LSTM or GRU or RNN')
     prsr.add_argument('--skip_con', '-sc', default=1, help='is there a skip connection for the input to the output')
     prsr.add_argument('--num_layers', '-nl', default=1, type=int, help="Number of RNN/Transformer layers.")
-    prsr.add_argument('--bidirectional', '-bd', type=bool, default=False,
+    prsr.add_argument('--bidirectional', '-bd', type=bool, default=True,
                         help="Enable bidirectional RNNs (applicable for LSTM/GRU/RNN).")
 
     args = prsr.parse_args()
-
-    if args.seed:
-        torch.manual_seed(args.seed)
-        np.random.seed(args.seed)
-        random.seed(args.seed)
-
-
     main(args)
-
-
